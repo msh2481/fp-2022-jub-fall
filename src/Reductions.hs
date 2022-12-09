@@ -2,10 +2,11 @@
 {-# LANGUAGE UndecidableInstances #-}
 
 module Reductions where
-import Lambda
+
 import Control.Monad.State
 import Data.Maybe
 import qualified Data.Set as Set
+import Lambda
 
 -- Выберите подходящий тип для подстановок.
 data Subst = Subst String Lambda
@@ -27,7 +28,7 @@ cas (Abs y expr) (Subst x m)
 
 -- Возможные стратегии редукции (о них расскажут 7 ноября).
 data Strategy = CallByValue | CallByName | NormalOrder | ApplicativeOrder
-  deriving Show
+  deriving (Show)
 
 isWeak :: Strategy -> Bool
 isWeak CallByValue = True
@@ -36,13 +37,18 @@ isWeak _ = False
 
 -- Выполняет CAS на верхнем уровне, если можно, и снова запускает eval на результате
 evalApp :: Strategy -> Lambda -> Lambda -> StateT Int Maybe Lambda
-evalApp strategy (Abs x y) z = evalBounded strategy (y `cas` Subst x z)
+evalApp strategy (Abs x y) z = do
+  fuel <- get
+  if fuel <= 0
+    then lift Nothing
+    else put (fuel - 1)
+  evalBounded strategy (y `cas` Subst x z)
 evalApp strategy x y = do
   fuel <- get
   if fuel <= 0
     then lift Nothing
     else put (fuel - 1)
-    
+
   x' <- evalBounded strategy x
   y' <- evalBounded strategy y
   return $ App x' y'
@@ -50,33 +56,28 @@ evalApp strategy x y = do
 -- Интерпретатор лямбда термов, учитывающий стратегию.
 evalBounded :: Strategy -> Lambda -> StateT Int Maybe Lambda
 evalBounded _ (Var x) = return $ Var x
-
 evalBounded strategy (Abs x y)
   | isWeak strategy = return $ Abs x y
   | otherwise = do
-      y' <- evalBounded strategy y
-      return $ Abs x y'
-
+    y' <- evalBounded strategy y
+    return $ Abs x y'
 evalBounded CallByName (App x y) = do
   x' <- evalBounded CallByName x
   evalApp CallByName x' y
-
 evalBounded NormalOrder (App x y) = do
   x' <- evalBounded CallByName x
   evalApp NormalOrder x' y
-
 evalBounded CallByValue (App x y) = do
   x' <- evalBounded CallByValue x
   y' <- evalBounded CallByValue y
   evalApp CallByValue x' y'
-
 evalBounded ApplicativeOrder (App x y) = do
   x' <- evalBounded ApplicativeOrder x
   y' <- evalBounded ApplicativeOrder y
   evalApp ApplicativeOrder x' y'
 
-evalMaybe :: Strategy -> Lambda -> Maybe Int -> Maybe Lambda
-evalMaybe strategy expression limit = evalStateT (evalBounded strategy expression) (fromMaybe maxBound limit)
+evalMaybe :: Strategy -> Lambda -> Int -> Maybe Lambda
+evalMaybe strategy expression = evalStateT (evalBounded strategy expression)
 
 eval :: Strategy -> Lambda -> Lambda
-eval strategy expression = fromJust (evalMaybe strategy expression Nothing)
+eval strategy expression = fromJust (evalMaybe strategy expression maxBound)

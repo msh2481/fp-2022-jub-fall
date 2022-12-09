@@ -26,9 +26,9 @@ genLambda =
 prop_strategiesAreEquivalent :: Property
 prop_strategiesAreEquivalent = property $ do
   term <- forAll $ genLambda
-  let n = Just 1000
-  let a = maybe Nothing (Just . toDeBruijn) (Reductions.evalMaybe NormalOrder term n)
-  let b = maybe Nothing (Just . toDeBruijn)  (Reductions.evalMaybe ApplicativeOrder term n)
+  let n = 1000
+  let a = Reductions.evalMaybe NormalOrder term n >>= (Just . toDeBruijn)
+  let b =  Reductions.evalMaybe ApplicativeOrder term n >>= (Just . toDeBruijn)
   assert (a == b)
 
 
